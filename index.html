@@ -105,7 +105,7 @@ canvas#c{width:100%;height:100%;display:block;touch-action:none;outline:none}
 .tb{width:54px;height:54px;border-radius:50%;border:2px solid var(--line);background:rgba(27,31,45,.8);font-size:13px;touch-action:none;user-select:none;-webkit-user-select:none}
 .tb.fire{width:84px;height:84px;background:rgba(255,93,108,.35);border-color:var(--hp);grid-row:span 2;font-size:16px}
 @media (pointer:coarse) and (orientation:landscape){
-  :root{--reserve:8px}
+  :root{--reserve:20px}
   .pad{position:fixed;left:0;right:0;bottom:0;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));pointer-events:none;z-index:5}
   .pad>*{pointer-events:auto}
   .stick{opacity:.7}
@@ -2634,10 +2634,22 @@ function drawHUD(){
 
 /* ---------- storage & connectivity ---------- */
 let netDb=null,netRoomNs=null,netUid=null,netJoined=null,lbRows=[],lbOk=false,saveT=null,pubT=0,ghosts={};
+/* deep-merge a stored save onto the defaults so older saves missing nested fields (home.decor, daily.prog.*, ...) can't crash the hub */
+function mergeSave(d,s){
+  if(Array.isArray(d))return Array.isArray(s)?s:d;
+  if(d&&typeof d==='object'){
+    const src=(s&&typeof s==='object'&&!Array.isArray(s))?s:{},o={};
+    for(const k in d)o[k]=mergeSave(d[k],src[k]);
+    for(const k in src)if(!(k in d))o[k]=src[k];
+    return o;
+  }
+  if(d===null)return s===undefined?d:s;
+  return typeof s===typeof d?s:d;
+}
 function loadLocal(){
   try{
     const s=JSON.parse(localStorage.getItem('mjd_save2')||'null');
-    if(s)save=Object.assign(SAVE0(),s);
+    if(s&&typeof s==='object')save=mergeSave(SAVE0(),s);
   }catch(e){}
 }
 function persist(){
@@ -2663,7 +2675,7 @@ async function netInit(){
       if(snap.exists){
         const d=snap.data();
         if(d&&(d.ts||0)>(save.ts||0)){
-          save=Object.assign(SAVE0(),d);
+          save=mergeSave(SAVE0(),d);
           try{localStorage.setItem('mjd_save2',JSON.stringify(save));}catch(e){}
           if(!menuEl.classList.contains('hidden'))renderHub();
         }
@@ -3760,24 +3772,6 @@ function codexUI(box){
   }
 }
 /* skills library with crystal purchase */
-function hubSk(){
-  const list=el('div','list');
-  const ids=Object.keys(SKILLS).filter(i=>SKILLS[i].unlock);
-  for(const id of ids){
-    const s=SKILLS[id],has=save.skills.includes(id),it=el('div','item');
-    it.append(el('b','',s.n),el('span','lv','冷卻 '+s.cd+' 秒'),el('small','',s.d));
-    if(has){
-      const on=save.eq===id,b=el('button','btn',on?'卸下':'裝備為技能 2');b.type='button';
-      b.addEventListener('click',()=>{save.eq=on?null:id;persist();renderHub();});it.appendChild(b);
-    }else{
-      it.appendChild(el('small','','通關第 '+s.unlock+' 層守關王後解鎖'));
-      if(s.price){const b=el('button','btn','直接購買　'+s.price+' 魔晶');b.type='button';b.disabled=save.crystals<s.price;
-        b.addEventListener('click',()=>{if(save.crystals>=s.price){save.crystals-=s.price;save.skills.push(id);persist();renderHub();}});it.appendChild(b);}
-    }
-    list.appendChild(it);
-  }
-  bodyEl.append(el('p','note','每位角色自帶一個專屬技能（空白鍵）。這裡的技能可以再裝備一個（R 鍵或「技能2」按鈕）。深層技能可用魔晶直接購買。'),list);
-}
 /* ---------- chat ---------- */
 let hubRoom=null,hubJoining=false,hubChat=[],hubUnsub=[],dmTo='';
 function cleanText(s){return String(s||'').replace(/[\u0000-\u001f]/g,' ').slice(0,60);}
@@ -3941,7 +3935,7 @@ function hubSet(){
       const s=ta.value.trim();if(!s.startsWith('MJD1:'))throw 0;
       const o=JSON.parse(decodeURIComponent(escape(atob(s.slice(5)))));
       if(!o||typeof o!=='object'||!Array.isArray(o.chars))throw 0;
-      save=Object.assign(SAVE0(),o);ensureHome();persist();toast('匯入成功');renderHub();
+      save=mergeSave(SAVE0(),o);ensureHome();persist();toast('匯入成功');renderHub();
     }catch(e){toast('匯入失敗：格式不正確');}
   });
   r2.append(ex,im);box.appendChild(r2);
